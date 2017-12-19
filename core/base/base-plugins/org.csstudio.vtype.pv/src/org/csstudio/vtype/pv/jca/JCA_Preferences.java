@@ -20,7 +20,6 @@ import org.csstudio.vtype.pv.PVPlugin;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.preferences.IPreferencesService;
 
-import gov.aps.jca.jni.JNITargetArch;
 
 /** Preferences for JCA
  *
@@ -54,8 +53,6 @@ public class JCA_Preferences
     private JCA_Preferences()
     {
         installPreferences();
-        if (! use_pure_java)
-            loadJCA();
     }
 
     /** Update the JCA/CAJ related properties from preferences */
@@ -69,8 +66,6 @@ public class JCA_Preferences
 
             final DIIRTPreferences dp = DIIRTPreferences.get();
 
-            use_pure_java = dp.getBoolean(ChannelAccess.PREF_PURE_JAVA);
-
             final DataSourceOptions.MonitorMask mask = DataSourceOptions.MonitorMask.fromString(dp.getString(ChannelAccess.PREF_MONITOR_MASK));
             if (mask == MonitorMask.CUSTOM)
                 monitor_mask = dp.getInteger(ChannelAccess.PREF_CUSTOM_MASK);
@@ -83,41 +78,28 @@ public class JCA_Preferences
 
             large_array_threshold = prefs.getInt(PVPlugin.ID, "large_array_threshold", large_array_threshold, null);
 
-            // Set the 'CAJ' and 'JNI' copies of the settings
-            setSystemProperty("com.cosylab.epics.caj.CAJContext.use_pure_java", Boolean.toString(use_pure_java));
+            // Set the 'CAJ' copies of the settings
             final String addr_list = dp.getString(ChannelAccess.PREF_ADDR_LIST);
             setSystemProperty("com.cosylab.epics.caj.CAJContext.addr_list", addr_list);
-            setSystemProperty("gov.aps.jca.jni.JNIContext.addr_list", addr_list);
 
             final String auto_addr = dp.getString(ChannelAccess.PREF_AUTO_ADDR_LIST);
             setSystemProperty("com.cosylab.epics.caj.CAJContext.auto_addr_list", auto_addr);
-            setSystemProperty("gov.aps.jca.jni.JNIContext.auto_addr_list", auto_addr);
 
             final String timeout = dp.getString(ChannelAccess.PREF_CONNECTION_TIMEOUT);
             setSystemProperty("com.cosylab.epics.caj.CAJContext.connection_timeout", timeout);
-            setSystemProperty("gov.aps.jca.jni.JNIContext.connection_timeout", timeout);
 
             final String beacon_period = dp.getString(ChannelAccess.PREF_BEACON_PERIOD);
             setSystemProperty("com.cosylab.epics.caj.CAJContext.beacon_period", beacon_period);
-            setSystemProperty("gov.aps.jca.jni.JNIContext.beacon_period", beacon_period);
 
             final String repeater_port = dp.getString(ChannelAccess.PREF_REPEATER_PORT);
             setSystemProperty("com.cosylab.epics.caj.CAJContext.repeater_port", repeater_port);
-            setSystemProperty("gov.aps.jca.jni.JNIContext.repeater_port", repeater_port);
 
             final String server_port = dp.getString(ChannelAccess.PREF_SERVER_PORT);
             setSystemProperty("com.cosylab.epics.caj.CAJContext.server_port", server_port);
-            setSystemProperty("gov.aps.jca.jni.JNIContext.server_port", server_port);
 
             final String max_array_bytes = dp.getString(ChannelAccess.PREF_MAX_ARRAY_SIZE);
             setSystemProperty("com.cosylab.epics.caj.CAJContext.max_array_bytes", max_array_bytes);
-            setSystemProperty("gov.aps.jca.jni.JNIContext.max_array_bytes", max_array_bytes);
 
-            // gov.aps.jca.event.QueuedEventDispatcher avoids
-            // deadlocks when calling JCA while receiving JCA callbacks.
-            // But JCA_PV avoids deadlocks, and QueuedEventDispatcher is faster
-            setSystemProperty("gov.aps.jca.jni.ThreadSafeContext.event_dispatcher",
-                              "gov.aps.jca.event.DirectEventDispatcher");
         }
         catch (Exception ex)
         {
@@ -138,51 +120,6 @@ public class JCA_Preferences
         logger.log(Level.FINE, "{0} = {1}", new Object[] { prop, value });
 
         System.setProperty(prop, value);
-    }
-
-    private void loadJCA()
-    {
-        final String jni_target = JNITargetArch.getTargetArch();
-        // this property must be unset, because JCA might mistakenly use it
-        final String path = "gov.aps.jca.jni.epics.".concat(jni_target).concat(".library.path");
-        System.setProperty(path, "");
-
-        // In case we have a dependency to Com and ca,
-        // try to load those.
-        // (On Windows, Com.dll and ca.dll need to be loaded
-        //  before loading jca.dll)
-        // Strictly speaking, loadLibray() might only apply to
-        // real JNI libs, and not ordinary shared libs.
-        // So the preferred method is to build a JCA JNILIB
-        // without further dependencies, in which case it's
-        // OK for the following two calls to fail:
-        Throwable com_ca_exception = null;
-        try
-        {
-            System.loadLibrary("Com");
-            System.loadLibrary("ca");
-        }
-        catch (Throwable ex)
-        {
-            // Remember the error because it might explain a follow-up
-            // jca load error.
-            // On the other hand, if jca loads OK, we can ignore this one.
-            com_ca_exception = ex;
-        }
-        // Load the JCA library.
-        // This better works out OK.
-        try
-        {
-            System.loadLibrary("jca");
-        }
-        catch (Throwable ex)
-        {
-            if (com_ca_exception != null)
-                logger.log(Level.CONFIG, "Cannot load Com and ca libraries. " +
-                                         "Could be a problem if JCA binary depends on them", com_ca_exception);
-            // This is an error for sure:
-            logger.log(Level.SEVERE, "Cannot load JCA binary", ex);
-        }
     }
 
     /** @return Singleton instance */
